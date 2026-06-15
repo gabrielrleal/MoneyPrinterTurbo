@@ -1,0 +1,9 @@
+name = "Art Gallery"
+engine = "gallery"
+description = "Wiki artwork with Ken Burns first, then crossfade to Pexels videos"
+
+[params]
+wiki_duration = 4.0
+ken_burns_start = 1.0
+ken_burns_end = 1.08
+fade_duration = 1.0

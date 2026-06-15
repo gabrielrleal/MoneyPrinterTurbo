@@ -1,0 +1,8 @@
+name = "Split Screen"
+engine = "split_screen"
+description = "Wiki artwork and Pexels videos side by side"
+
+[params]
+layout = "horizontal"
+gap = 4
+wiki_fill_ratio = 0.5

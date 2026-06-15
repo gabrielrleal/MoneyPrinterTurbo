@@ -53,6 +53,7 @@
     "Background Music Volume": "Volume da Música de Fundo (0.2 representa 20%, a música de fundo não deve ser muito alta)",
     "Subtitle Settings": "**Configurações de Legendas**",
     "Enable Subtitles": "Ativar Legendas (Se desmarcado, as configurações abaixo não terão efeito)",
+    "Show subtitle preview": "Mostrar preview da legenda",
     "Font": "Fonte da Legenda",
     "Position": "Posição da Legenda",
     "Top": "Superior",
@@ -131,6 +132,14 @@
     "Pixabay API Key added successfully": "Chave de API do Pixabay adicionada com sucesso",
     "Select Pixabay API Key to delete": "Selecione a chave de API do Pixabay para excluir",
     "Delete Selected Pixabay API Key": "Excluir chave de API do Pixabay selecionada",
+    "Quick Create": "Criação Rápida",
+    "Generate": "Gerar",
+    "Advanced Settings": "Configurações Avançadas",
+    "Aspect Ratio": "Proporção de Tela",
+    "Script & Style": "Roteiro & Estilo",
+    "Visual & Audio": "Visual & Áudio",
+    "System": "Sistema",
+    "Preset Layout": "Layout do Preset",
     "Pixabay API Key deleted successfully": "Chave de API do Pixabay excluída com sucesso"
   }
 }

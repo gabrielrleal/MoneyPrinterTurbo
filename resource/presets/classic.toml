@@ -1,0 +1,7 @@
+name = "Classic (Sequential)"
+engine = "sequential"
+description = "Default sequential video composition with transitions"
+
+[params]
+clip_duration = 5
+transition_duration = 0.5

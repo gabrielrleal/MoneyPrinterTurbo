@@ -6,6 +6,12 @@ from urllib.parse import urlencode
 
 import requests
 from loguru import logger
+from moviepy import (
+    AudioClip,
+    ColorClip,
+    CompositeVideoClip,
+    ImageClip,
+)
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
 from app.config import config
@@ -225,6 +231,166 @@ def save_video(video_url: str, save_dir: str = "") -> str:
     return ""
 
 
+def download_wikimedia_art(
+    search_term: str,
+    save_dir: str = "",
+    clip_duration: int = 4,
+    video_aspect: VideoAspect = VideoAspect.portrait,
+    layout: str = "sequential",
+) -> str | None:
+    try:
+        title = search_term.removeprefix("wiki:").strip()
+        if not title:
+            logger.warning(f"empty wiki search term: {search_term!r}")
+            return None
+
+        logger.info(f"searching Wikimedia for: {title!r}")
+
+        params = {
+            "action": "query",
+            "titles": title,
+            "prop": "pageimages",
+            "pithumbsize": 1920,
+            "format": "json",
+        }
+        wiki_headers = {
+            "User-Agent": "MoneyPrinterTurbo/1.0 (https://github.com/harry0703/MoneyPrinterTurbo)"
+        }
+        resp = requests.get(
+            "https://en.wikipedia.org/w/api.php",
+            params=params,
+            headers=wiki_headers,
+            proxies=config.proxy,
+            timeout=(15, 30),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        pages = data.get("query", {}).get("pages", {})
+        if not pages:
+            logger.warning(f"no pages found for wiki title: {title!r}")
+            return None
+
+        page = next(iter(pages.values()))
+        if "missing" in page:
+            logger.warning(f"wiki page does not exist: {title!r}")
+            return None
+
+        thumbnail = page.get("thumbnail")
+        if not thumbnail or "source" not in thumbnail:
+            logger.warning(f"wiki page has no image: {title!r}")
+            return None
+
+        image_url = thumbnail["source"]
+        logger.info(f"found wiki image: {image_url}")
+
+        if not save_dir:
+            save_dir = utils.storage_dir("cache_videos")
+
+        os.makedirs(save_dir, exist_ok=True)
+
+        url_hash = utils.md5(image_url)
+        image_filename = f"wiki-{url_hash}.jpg"
+        image_path = os.path.join(save_dir, image_filename)
+        video_path = os.path.join(save_dir, f"wiki-{url_hash}.mp4")
+
+        # Overlay: retorna o .jpg diretamente, sem converter para vídeo
+        if layout == "overlay":
+            if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+                logger.info(f"wiki overlay image ready: {image_path}")
+                return image_path
+
+        # Sequential: reutilizar .mp4 em cache se existir
+        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+            logger.info(f"wiki video already exists: {video_path}")
+            return video_path
+
+        img_headers = {
+            "User-Agent": "MoneyPrinterTurbo/1.0 (https://github.com/harry0703/MoneyPrinterTurbo)"
+        }
+        img_resp = requests.get(
+            image_url,
+            headers=img_headers,
+            proxies=config.proxy,
+            timeout=(30, 60),
+        )
+        img_resp.raise_for_status()
+
+        with open(image_path, "wb") as f:
+            f.write(img_resp.content)
+
+        if not os.path.getsize(image_path):
+            logger.warning(f"downloaded wiki image is empty: {image_path}")
+            return None
+
+        # Overlay: após baixar a imagem, retorna o .jpg
+        if layout == "overlay":
+            logger.info(f"wiki overlay image downloaded: {image_path}")
+            return image_path
+
+        aspect = VideoAspect(video_aspect)
+        target_w, target_h = aspect.to_resolution()
+
+        clip = ImageClip(image_path)
+
+        img_w, img_h = clip.size
+        img_ratio = img_w / img_h
+        target_ratio = target_w / target_h
+
+        if img_ratio > target_ratio:
+            scale_factor = target_w / img_w
+        else:
+            scale_factor = target_h / img_h
+
+        new_w = int(img_w * scale_factor)
+        new_h = int(img_h * scale_factor)
+
+        clip = (
+            clip
+            .resized(new_size=(new_w, new_h))
+            .with_position("center")
+            .with_duration(clip_duration)
+        )
+
+        background = (
+            ColorClip(size=(target_w, target_h), color=(0, 0, 0))
+            .with_duration(clip_duration)
+        )
+
+        zoom_factor = 1.10
+        zoom_clip = clip.resized(
+            lambda t: 1 + (zoom_factor - 1) * (t / clip.duration)
+        )
+
+        final_clip = CompositeVideoClip([background, zoom_clip])
+
+        silent_audio = AudioClip(
+            lambda t: 0,
+            duration=clip_duration,
+            fps=44100,
+        )
+        final_clip = final_clip.with_audio(silent_audio)
+
+        final_clip.write_videofile(
+            video_path,
+            fps=30,
+            logger=None,
+        )
+
+        final_clip.close()
+        clip.close()
+
+        logger.success(f"wiki artwork video created: {video_path}")
+        return video_path
+
+    except Exception:
+        logger.warning(
+            f"failed to process wiki artwork for {search_term!r}",
+            exc_info=True,
+        )
+        return None
+
+
 def download_videos(
     task_id: str,
     search_terms: List[str],
@@ -233,7 +399,7 @@ def download_videos(
     video_contact_mode: VideoConcatMode = VideoConcatMode.random,
     audio_duration: float = 0.0,
     max_clip_duration: int = 5,
-) -> List[str]:
+) -> tuple[list[str], str | None]:
     valid_video_items = []
     valid_video_urls = []
     found_duration = 0.0
@@ -242,6 +408,9 @@ def download_videos(
         search_videos = search_videos_pixabay
 
     for search_term in search_terms:
+        if search_term.lower().startswith("wiki:"):
+            continue
+
         video_items = search_videos(
             search_term=search_term,
             minimum_duration=max_clip_duration,
@@ -259,6 +428,7 @@ def download_videos(
         f"found total videos: {len(valid_video_items)}, required duration: {audio_duration} seconds, found duration: {found_duration} seconds"
     )
     video_paths = []
+    wiki_overlay_image = None
 
     material_directory = config.app.get("material_directory", "").strip()
     if material_directory == "task":
@@ -271,7 +441,36 @@ def download_videos(
         random.shuffle(valid_video_items)
 
     total_duration = 0.0
+    preset_name = str(config.app.get("preset_name", "sequential")).strip().lower()
+
+    for search_term in search_terms:
+        if not search_term.lower().startswith("wiki:"):
+            continue
+        logger.info(f"searching wikimedia art for '{search_term}'")
+        wiki_video = download_wikimedia_art(
+            search_term=search_term,
+            save_dir=material_directory or utils.storage_dir("cache_videos"),
+            clip_duration=max_clip_duration,
+            video_aspect=video_aspect,
+            layout=preset_name,
+        )
+        if wiki_video:
+            if preset_name != "sequential":
+                wiki_overlay_image = wiki_video
+                logger.info(f"wiki overlay image saved: {wiki_video}")
+            else:
+                video_paths.append(wiki_video)
+                total_duration += max_clip_duration
+                logger.info(f"wiki video saved: {wiki_video}")
+        else:
+            logger.warning(f"failed to get wiki artwork for '{search_term}'")
+
     for item in valid_video_items:
+        if total_duration > audio_duration:
+            logger.info(
+                f"total duration of downloaded videos: {total_duration} seconds, skip downloading more"
+            )
+            break
         try:
             logger.info(f"downloading video: {item.url}")
             saved_video_path = save_video(
@@ -282,15 +481,10 @@ def download_videos(
                 video_paths.append(saved_video_path)
                 seconds = min(max_clip_duration, item.duration)
                 total_duration += seconds
-                if total_duration > audio_duration:
-                    logger.info(
-                        f"total duration of downloaded videos: {total_duration} seconds, skip downloading more"
-                    )
-                    break
         except Exception as e:
             logger.error(f"failed to download video: {utils.to_json(item)} => {str(e)}")
     logger.success(f"downloaded {len(video_paths)} videos")
-    return video_paths
+    return video_paths, wiki_overlay_image
 
 
 if __name__ == "__main__":

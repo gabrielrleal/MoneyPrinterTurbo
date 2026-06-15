@@ -1,0 +1,9 @@
+name = "Live Frame (Overlay)"
+engine = "overlay"
+description = "Wiki artwork over blurred video background with Ken Burns zoom"
+
+[params]
+overlay_scale = 0.8
+ken_burns_start = 1.0
+ken_burns_end = 1.08
+blur_radius = 30
